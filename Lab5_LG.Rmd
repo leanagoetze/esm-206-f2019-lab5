@@ -9,3 +9,186 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+pull frequently (click on blue arrow)
+
+#### Lab 5 Objectives
+-Learn to parse dates with 'lubridate'
+-get counts of observations with count()
+-uncount() rows
+- one and two-sample t-test
+-crate a heat map with geom_tile()
+
+```{r, include = FALSE}
+# code and outputs excluded from knitted document with inlcude = FALSE
+# read in data and attach packages
+library(tidyverse)
+library(here)
+library(janitor)
+
+lobster_abundance <- read_csv(here::here("data", "lobster_abundance.csv"), 
+                              na = "-99999") %>%
+  janitor::clean_names()
+
+```
+
+Use tidyr::uncount() to convert our lobster data from frequency format to case format
+
+```{r}
+# look in lobster abundance, whatever the value is in lobster_count (however many time it was counted), will just repeat the rows that number of times
+
+lobster_tidy <- lobster_abundance %>% 
+  tidyr::uncount(lobster_count)
+```
+
+#### Exploratory data visualization
+
+We're only going to consider 'site' as our variable of interest
+```{r}
+ggplot(lobster_tidy, aes(x = site, y = size_mm)) +
+  geom_jitter(aes (color = site),
+                   alpha = 0.5, 
+                   width = 0.2)
+
+# histogram
+ggplot(lobster_tidy, aes (x = size_mm)) +
+  geom_histogram(aes(fill = site)) +
+  facet_wrap(~site)
+
+ggplot(lobster_tidy, aes(sample = size_mm)) +
+  geom_qq()
+
+# looks like pretty close to normal distrubtion compared to theoretical normal distribution. but now look at between different site
+
+ggplot(lobster_tidy, aes(sample = size_mm)) +
+  geom_qq()+
+  facet_wrap(~site)
+
+# looking both at histograms and qq plots--> would say these are pretty close to normal distribution
+
+# central limit theorem- means will be normally distributed with >30 sample size
+# parametric test- ex. t-test
+# even if have very skewed sample, if >30 sample size can still compare means b/c central limit theorem says that means will follow normal distribution. (?)
+
+```
+
+#### convert the 'date' column to class 'date'
+
+We'll use the 'lubridate' package to convert to date format, and then to help us easily parse month & year
+
+```{r}
+lobster_date <- lobster_tidy %>% 
+  mutate(
+    date_new = lubridate::mdy(date)
+  )
+```
+
+Now let's parse year and month using lubraidate::month() and lubridate::year()
+
+```{r}
+
+lobster_parse_date <- lobster_date %>% 
+  mutate(
+    obs_month = lubridate::month(date_new, label = TRUE), 
+    obs_year = lubridate::year(date_new)
+  )
+
+# lubridate month automatically recognized this as an ordered factor, so do not need to reorder or anything!
+```
+
+Now let's find counts of observed lobsters based on different heirarchical groupings:
+
+First, let's count lobsters by year and month:
+```{r}
+lobster_ym <- lobster_parse_date %>% 
+  dplyr::count(obs_year, obs_month)
+
+lobster_y <- lobster_parse_date %>% 
+  dplyr::count(obs_year)
+
+lobster_site <-lobster_date %>% 
+  dplyr::count(site)
+```
+
+If we want to create a summary table that contains statistics OTHER than counts by group, it's easier to use group_by() + n()
+
+```{r}
+lobster_summary <- lobster_parse_date %>% 
+  group_by(site) %>% 
+  summarize( 
+    mean_size = mean(size_mm, na.rm = TRUE),
+    sd_size = sd(size_mm, na.rm = TRUE),
+    lobster_number = n())
+
+# if just trying to count a group--> use count, if trying to find m,ultiple summary stats use group by + summarize + n
+# can also use tally
+```
+
+####  find confidence intervals
+
+use t.test() function to find confidence intervals(for one sample) and perform t-tests to compare means of two samples (...and this will be covered conceptually in lectures week 6)
+
+```{r}
+ivee_lobster <- lobster_tidy %>% 
+  filter(site == "IVEE") %>% 
+  pull(size_mm)
+
+t.test(ivee_lobster)
+
+```
+
+#### two sample t-test to compare means
+
+null hyp= samples are drawn from pop. with the same mean(?)
+
+we want to ask is there a signifact difference in lobster lengths at naples and mohawk reefs?
+
+we've done our necessary exploratory analyses to determine that a two sample t-test for means comparison is appropriate. 
+
+```{r}
+napl_sample <- lobster_tidy %>% 
+  filter(site == "NAPL") %>% 
+  pull(size_mm)
+
+mohk_sample <- lobster_tidy %>% 
+  filter(site == "MOHK") %>% 
+  pull(size_mm)
+
+mn_ttest <- t.test(mohk_sample, napl_sample)
+
+mn_ttest
+```
+There is a significant difference in lobster lengths between Naples and Mohawk Reef. (T(df) = statisic, p <0.001, alpha = 0.05)
+
+to do this a slightly different way:
+```{r}
+
+lobster_mn <- lobster_tidy %>% 
+  filter(site %in% c("NAPL", "MOHK"))
+
+mn_ttest2 <- t.test(size_mm ~ site, data = lobster_mn)
+
+mn_ttest2
+
+mn_ttest2$p.value
+mn_ttest2$statistic
+
+```
+
+Here is the t-stastistic: `r mn_ttest2$p.value`
+
+Here is my t-statsitc: `r mn_ttest2$statistic`
+
+#### Now: a heatmap!
+
+```{r}
+lobster_ys <- lobster_parse_date %>% 
+  count(obs_year, site)
+
+ggplot(lobster_ys, aes(x = "obs_year", y = "site)") +
+         geom_tile(aes(fill = n))
+```
+
+
+
+must give t-test entire vector of observations, cannot just give thme one value(ex. the mean)
+
